@@ -12,7 +12,6 @@ import os
 import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-import io
 
 # SharePoint/Microsoft Graph imports
 from msal import ConfidentialClientApplication
