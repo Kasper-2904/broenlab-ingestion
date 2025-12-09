@@ -47,8 +47,8 @@ from utils.document_processing import (
     FigureReferenceSerializerProvider
 )
 
-# Initialize Azure Function App
-app = func.FunctionApp(http_auth_level=func.AuthLevel.FUNCTION)
+# Initialize Azure Function App (ANONYMOUS at app level, API key checked in code)
+app = func.FunctionApp(http_auth_level=func.AuthLevel.ANONYMOUS)
 
 # Global configuration from environment
 SHAREPOINT_TENANT_ID = os.getenv('SHAREPOINT_TENANT_ID')
@@ -68,6 +68,19 @@ CHUNK_MAX_TOKENS = int(os.getenv('CHUNK_MAX_TOKENS', '768'))
 CHUNK_MERGE_PEERS = os.getenv('CHUNK_MERGE_PEERS', 'true').lower() == 'true'
 VOYAGE_OUTPUT_DIM = os.getenv('VOYAGE_OUTPUT_DIM')
 VOYAGE_OUTPUT_DTYPE = os.getenv('VOYAGE_OUTPUT_DTYPE', 'float')
+
+# API Security
+API_SECRET_KEY = os.getenv('API_SECRET_KEY')
+
+
+def verify_api_key(req: func.HttpRequest) -> bool:
+    """Verify the API key from request header."""
+    if not API_SECRET_KEY:
+        logging.warning("API_SECRET_KEY not configured - skipping auth")
+        return True
+
+    provided_key = req.headers.get('X-API-Key') or req.headers.get('x-api-key')
+    return provided_key == API_SECRET_KEY
 
 if VOYAGE_OUTPUT_DIM and VOYAGE_OUTPUT_DIM.lower() != 'none':
     VOYAGE_OUTPUT_DIM = int(VOYAGE_OUTPUT_DIM)
@@ -310,26 +323,37 @@ def process_single_pdf(
     }
 
 
-@app.route(route="ingest_sharepoint_folder", methods=["POST"])
+@app.route(route="ingest_sharepoint_folder", methods=["POST"], auth_level=func.AuthLevel.ANONYMOUS)
 async def ingest_sharepoint_folder(req: func.HttpRequest) -> func.HttpResponse:
     """
     HTTP trigger to ingest all PDFs from a SharePoint folder.
-    
+
     Request body (JSON):
     {
         "folder_path": "Shared Documents/PDFs",  // Optional, uses env var if not provided
         "max_files": 10  // Optional, limits number of files to process
     }
-    
+
     Response:
     {
         "status": "success",
         "processed": 5,
         "results": [...]
     }
+
+    Headers:
+        X-API-Key: your-secret-key
     """
     logging.info('Processing SharePoint folder ingestion request')
-    
+
+    # Verify API key
+    if not verify_api_key(req):
+        return func.HttpResponse(
+            json.dumps({'error': 'Unauthorized - Invalid or missing API key'}),
+            status_code=401,
+            mimetype='application/json'
+        )
+
     try:
         # Parse request body
         req_body = req.get_json()
@@ -415,11 +439,11 @@ async def ingest_sharepoint_folder(req: func.HttpRequest) -> func.HttpResponse:
         )
 
 
-@app.route(route="ingest_single_pdf", methods=["POST"])
+@app.route(route="ingest_single_pdf", methods=["POST"], auth_level=func.AuthLevel.ANONYMOUS)
 async def ingest_single_pdf(req: func.HttpRequest) -> func.HttpResponse:
     """
     HTTP trigger to ingest a single PDF from SharePoint or Azure Blob Storage.
-    
+
     Request body (JSON):
     {
         "source_type": "sharepoint",  // or "blob"
@@ -428,7 +452,7 @@ async def ingest_single_pdf(req: func.HttpRequest) -> func.HttpResponse:
         "container_name": "pdfs",  // For Blob Storage
         "blob_name": "document.pdf"  // For Blob Storage
     }
-    
+
     Response:
     {
         "status": "success",
@@ -436,9 +460,20 @@ async def ingest_single_pdf(req: func.HttpRequest) -> func.HttpResponse:
         "chunk_count": 10,
         "figure_count": 5
     }
+
+    Headers:
+        X-API-Key: your-secret-key
     """
     logging.info('Processing single PDF ingestion request')
-    
+
+    # Verify API key
+    if not verify_api_key(req):
+        return func.HttpResponse(
+            json.dumps({'error': 'Unauthorized - Invalid or missing API key'}),
+            status_code=401,
+            mimetype='application/json'
+        )
+
     try:
         # Parse request body
         req_body = req.get_json()
@@ -544,9 +579,9 @@ async def ingest_single_pdf(req: func.HttpRequest) -> func.HttpResponse:
         )
 
 
-@app.route(route="health", methods=["GET"])
+@app.route(route="health", methods=["GET"], auth_level=func.AuthLevel.ANONYMOUS)
 def health_check(req: func.HttpRequest) -> func.HttpResponse:
-    """Simple health check endpoint."""
+    """Simple health check endpoint (no auth required)."""
     return func.HttpResponse(
         json.dumps({'status': 'healthy', 'service': 'docling-ingest'}),
         status_code=200,
