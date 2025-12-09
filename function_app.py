@@ -130,7 +130,7 @@ async def list_sharepoint_files(folder_path: str) -> List[Dict[str, Any]]:
         drive_id = drives.value[0].id
         
         # Navigate to folder and list items
-        folder_items = await client.drives.by_drive_id(drive_id).root.item_with_path(folder_path).children.get()
+        folder_items = await client.drives.by_drive_id(drive_id).items.by_drive_item_id(f"root:/{folder_path}:").children.get()
         
         pdf_files = []
         if folder_items and folder_items.value:
